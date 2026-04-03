@@ -1,0 +1,6 @@
+{
+    "meta": {
+        "name": "SignalRGB 桥接",
+        "description": "通过 HID 桥接 SignalRGB 设备脚本到 Skydimo，支持数百种额外的 RGB 设备。"
+    }
+}

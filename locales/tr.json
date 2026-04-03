@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "name": "SignalRGB Köprüsü",
+    "description": "SignalRGB cihaz betiklerini HID üzerinden Skydimo’ya köprüleyerek yüzlerce ek RGB cihaz desteği sağlar."
+  }
+}

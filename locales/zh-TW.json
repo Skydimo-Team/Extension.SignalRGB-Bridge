@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "name": "SignalRGB 橋接",
+    "description": "透過 HID 將 SignalRGB 裝置腳本橋接至 Skydimo，支援數百種額外的 RGB 裝置。"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "name": "SignalRGB Bridge",
+    "description": "Соединяет сценарии устройств SignalRGB со Skydimo через HID, обеспечивая поддержку сотен дополнительных RGB-устройств."
+  }
+}

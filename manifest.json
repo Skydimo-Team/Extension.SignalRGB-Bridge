@@ -1,0 +1,16 @@
+{
+  "id": "signalrgb_bridge",
+  "version": "1.0.0",
+  "name": "meta.name",
+  "publisher": "Skydimo",
+  "type": "extension",
+  "language": "lua",
+  "entry": "init.lua",
+  "permissions": ["hardware:hid", "native", "system:info"],
+  "native": {
+    "preload_dlls": ["lua54.dll"]
+  },
+  "description": "meta.description",
+  "repository": "https://github.com/skydimo/skydimo-plugins",
+  "license": "MIT"
+}

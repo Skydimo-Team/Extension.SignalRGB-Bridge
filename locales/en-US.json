@@ -1,0 +1,6 @@
+{
+    "meta": {
+        "name": "SignalRGB Bridge",
+        "description": "Bridges SignalRGB device scripts to Skydimo via HID, enabling support for hundreds of additional RGB devices."
+    }
+}
