@@ -24,6 +24,10 @@
   --badge-ok-text: #107c10;
   --badge-error-bg: rgba(196, 43, 28, 0.1);
   --badge-error-text: #c42b1c;
+  --badge-warning-bg: rgba(255, 141, 40, 0.12);
+  --badge-warning-text: #9a4a00;
+  --badge-idle-bg: rgba(0, 0, 0, 0.05);
+  --badge-idle-text: #5f5f5f;
   --badge-disabled-bg: rgba(0, 0, 0, 0.05);
   --badge-disabled-text: #808080;
   --badge-device-bg: rgba(0, 103, 192, 0.08);
@@ -69,6 +73,10 @@
     --badge-ok-text: #6cc4a1;
     --badge-error-bg: rgba(255, 66, 69, 0.12);
     --badge-error-text: #FF4245;
+    --badge-warning-bg: rgba(255, 146, 48, 0.14);
+    --badge-warning-text: #ffbe78;
+    --badge-idle-bg: rgba(255, 255, 255, 0.06);
+    --badge-idle-text: #c6c8d0;
     --badge-disabled-bg: rgba(255, 255, 255, 0.06);
     --badge-disabled-text: #808080;
     --badge-device-bg: rgba(96, 205, 255, 0.1);

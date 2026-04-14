@@ -6,7 +6,7 @@
   "type": "extension",
   "language": "lua",
   "entry": "init.lua",
-  "page": "page/dist/index.html",
+  "page_url": "http://localhost:5173",
   "permissions": ["hardware:hid", "native", "system:info"],
   "native": {
     "preload_dlls": ["lua54.dll"]

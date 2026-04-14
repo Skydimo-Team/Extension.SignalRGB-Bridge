@@ -10,6 +10,22 @@ local M = {}
 
 local devices = {}
 local registered_ports = {}
+local change_listener = nil
+
+local function notify_change(kind, state)
+    if type(change_listener) ~= "function" then
+        return
+    end
+
+    local ok, err = pcall(change_listener, kind, state)
+    if not ok then
+        ext.log("[SRGB] Device change listener failed: " .. tostring(err))
+    end
+end
+
+function M.set_change_listener(listener)
+    change_listener = listener
+end
 
 function M.get(port)
     return devices[port]
@@ -530,6 +546,7 @@ function M.sync_topology(state, force)
     end
 
     apply_registration_state(state, registration)
+    notify_change("updated", state)
     return true, true
 end
 
@@ -586,6 +603,7 @@ function M.register(meta, primary_handle, primary_hid)
 
     devices[controller_port] = state
     registered_ports[#registered_ports + 1] = controller_port
+    notify_change("registered", state)
 
     ext.log(string.format(
         "[SRGB] Registered: %s (%s) outputs=%d",
@@ -623,6 +641,7 @@ function M.remove(port)
             break
         end
     end
+    notify_change("removed", state)
 end
 
 function M.remove_all()

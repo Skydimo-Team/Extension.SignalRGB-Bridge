@@ -1,4 +1,4 @@
-import type { ScriptInfo, ScriptsSnapshotPayload } from './types'
+import type { BridgeDevice, DevicesSnapshotPayload, ScriptInfo, ScriptsSnapshotPayload } from './types'
 import { setLocale } from './i18n'
 
 interface ExtPageEnv {
@@ -17,18 +17,31 @@ export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected'
 
 export type BridgeEvent =
   | { type: 'scripts_snapshot'; data: ScriptsSnapshotPayload }
+  | { type: 'devices_snapshot'; data: DevicesSnapshotPayload }
 
 type BridgeListener = (event: BridgeEvent) => void
 type StatusListener = (status: ConnectionStatus) => void
 
+const _params = new URLSearchParams(window.location.search)
+
 const PAGE: ExtPageEnv = {
-  extId: window.__SKYDIMO_EXT_PAGE__?.extId ?? 'signalrgb_bridge',
-  wsUrl: window.__SKYDIMO_EXT_PAGE__?.wsUrl ?? 'ws://127.0.0.1:42070',
+  extId: window.__SKYDIMO_EXT_PAGE__?.extId ?? _params.get('extId') ?? 'signalrgb_bridge',
+  wsUrl: window.__SKYDIMO_EXT_PAGE__?.wsUrl ?? _params.get('wsUrl') ?? 'ws://127.0.0.1:42070',
 }
 
 function normalizeScripts(value: unknown): ScriptInfo[] {
   if (!Array.isArray(value)) return []
   return value.filter((s): s is ScriptInfo => !!s && typeof s === 'object' && typeof s.path === 'string')
+}
+
+function normalizeDevices(value: unknown): BridgeDevice[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((device): device is BridgeDevice => {
+    return !!device
+      && typeof device === 'object'
+      && typeof (device as BridgeDevice).port === 'string'
+      && typeof (device as BridgeDevice).name === 'string'
+  })
 }
 
 class ExtensionBridge {
@@ -110,6 +123,16 @@ class ExtensionBridge {
         const bridgeEvent: BridgeEvent = {
           type: 'scripts_snapshot',
           data: { scripts: normalizeScripts((msg as Record<string, unknown>).scripts) },
+        }
+        for (const listener of this.listeners) {
+          listener(bridgeEvent)
+        }
+      }
+
+      if (msg.type === 'devices_snapshot') {
+        const bridgeEvent: BridgeEvent = {
+          type: 'devices_snapshot',
+          data: { devices: normalizeDevices((msg as Record<string, unknown>).devices) },
         }
         for (const listener of this.listeners) {
           listener(bridgeEvent)
