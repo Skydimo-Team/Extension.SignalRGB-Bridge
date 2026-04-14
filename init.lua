@@ -260,6 +260,9 @@ function P.on_start()
         "Scanning device scripts...")
     local results = scanner.scan_directory(scripts_dir(), function(msg)
         ext.log(msg)
+    end, function(current, total)
+        ext.notify_persistent("srgb-scan", "SignalRGB Bridge",
+            "Scanning device scripts... (" .. current .. "/" .. total .. ")")
     end)
     ext.dismiss_persistent("srgb-scan")
 
@@ -304,6 +307,9 @@ function P.on_scan_devices()
     ext.notify_persistent("srgb-scan", "SignalRGB Bridge", "Rescanning...")
     local results = scanner.scan_directory(scripts_dir(), function(msg)
         ext.log(msg)
+    end, function(current, total)
+        ext.notify_persistent("srgb-scan", "SignalRGB Bridge",
+            "Rescanning... (" .. current .. "/" .. total .. ")")
     end)
     ext.dismiss_persistent("srgb-scan")
 

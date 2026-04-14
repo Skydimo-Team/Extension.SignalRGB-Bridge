@@ -149,9 +149,11 @@ end
 --- Scan all .js files in a directory tree.
 ---@param base_dir string  root scan directory
 ---@param log_fn function  logging callback(msg)
+---@param progress_fn? function  progress callback(current, total)
 ---@return table  array of { meta=... } or { error=... }
-function M.scan_directory(base_dir, log_fn)
+function M.scan_directory(base_dir, log_fn, progress_fn)
     log_fn = log_fn or function() end
+    progress_fn = progress_fn or function() end
     local results = {}
 
     local cmd
@@ -161,26 +163,33 @@ function M.scan_directory(base_dir, log_fn)
         cmd = 'find "' .. base_dir .. '" -name "*.js" -type f 2>/dev/null'
     end
 
+    -- Collect all file paths first so we know the total count.
+    local paths = {}
     local handle = io.popen(cmd)
     if not handle then
         log_fn("Failed to list directory: " .. base_dir)
         return results
     end
-
     for line in handle:lines() do
         local path = line:match("^%s*(.-)%s*$")
         if path and #path > 0 then
-            local meta, err = M.scan_file(path)
-            if meta then
-                results[#results + 1] = { meta = meta }
-                log_fn("  scanned: " .. meta.name .. " (VID="
-                    .. string.format("0x%04X", meta.vid or 0) .. ")")
-            else
-                results[#results + 1] = { error = path .. ": " .. (err or "?") }
-            end
+            paths[#paths + 1] = path
         end
     end
     handle:close()
+
+    local total = #paths
+    for i, path in ipairs(paths) do
+        progress_fn(i, total)
+        local meta, err = M.scan_file(path)
+        if meta then
+            results[#results + 1] = { meta = meta }
+            log_fn("  scanned: " .. meta.name .. " (VID="
+                .. string.format("0x%04X", meta.vid or 0) .. ")")
+        else
+            results[#results + 1] = { error = path .. ": " .. (err or "?") }
+        end
+    end
 
     return results
 end
