@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "name": "SignalRGB-Skripttreiber (Beta)",
+    "description": "Ein QuickJS-basierter Kompatibilitätstreiber zum Ausführen von SignalRGB-Geräteskripten in Skydimo. Befindet sich noch im Test, und bei einigen Geräten kann es zu Rucklern kommen."
+  }
+}
