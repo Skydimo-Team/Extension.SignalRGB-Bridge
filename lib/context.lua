@@ -45,6 +45,52 @@ local SETUP_PARAMS_JS = [[
 })();
 ]]
 
+local APPLY_STATIC_METADATA_JS = [[
+(function() {
+    if (typeof device === 'undefined') return;
+
+    var size = (typeof __srgb_static_size !== 'undefined') ? __srgb_static_size : null;
+    if (Array.isArray(size) && size.length >= 2) {
+        device.setSize(size);
+    }
+
+    var names = (typeof __srgb_static_led_names !== 'undefined') ? __srgb_static_led_names : null;
+    var positions = (typeof __srgb_static_led_positions !== 'undefined') ? __srgb_static_led_positions : null;
+    if ((Array.isArray(names) && names.length > 0) || (Array.isArray(positions) && positions.length > 0)) {
+        device.setControllableLeds(
+            Array.isArray(names) ? names : [],
+            Array.isArray(positions) ? positions : []
+        );
+    }
+})();
+]]
+
+local function clone_array(value)
+    if type(value) ~= "table" then return {} end
+    local cloned = {}
+    for i, item in ipairs(value) do
+        cloned[i] = item
+    end
+    return cloned
+end
+
+local function apply_static_metadata(ctx, meta)
+    meta = meta or {}
+    local width = math.max(1, math.floor(tonumber(meta.width) or 1))
+    local height = math.max(1, math.floor(tonumber(meta.height) or 1))
+
+    local ok_set, set_err = pcall(function()
+        ctx:set("__srgb_static_size", { width, height })
+        ctx:set("__srgb_static_led_names", clone_array(meta.led_names))
+        ctx:set("__srgb_static_led_positions", clone_array(meta.led_positions))
+    end)
+    if not ok_set then return nil, set_err end
+
+    local ok_apply, apply_err = pcall(ctx.eval, ctx, APPLY_STATIC_METADATA_JS, "<static-metadata>")
+    if not ok_apply then return nil, apply_err end
+    return true
+end
+
 -------------------------------------------------------------------
 -- Runtime context (full HID I/O, frame buffer, etc.)
 -------------------------------------------------------------------
@@ -171,6 +217,12 @@ function M.create_runtime(meta, primary_handle, primary_hid, ep_handles, all_eps
     -- Set VID/PID
     ctx:eval(string.format("device._vid = %d; device._pid = %d;",
         primary_hid.vid or 0, primary_hid.pid or 0))
+
+    local ok_meta, meta_err = apply_static_metadata(ctx, meta)
+    if not ok_meta then
+        ctx:close()
+        return nil, "static metadata: " .. tostring(meta_err)
+    end
 
     -- Eval user script
     local ok3, err3 = pcall(ctx.eval, ctx, meta.js_source, meta.source_path or "<script>")
