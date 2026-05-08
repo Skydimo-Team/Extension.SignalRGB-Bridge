@@ -1,0 +1,24 @@
+[package]
+name = "signalrgb_bridge_native"
+version = "1.0.0"
+edition = "2021"
+build = "build.rs"
+
+[lib]
+name = "signalrgb_bridge"
+crate-type = ["cdylib"]
+
+[dependencies]
+boa_engine = "0.21.1"
+boa_gc = "0.21.1"
+hidapi = "2.6.5"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+wmi = "0.18.4"
+
+[build-dependencies]
+
+[workspace]

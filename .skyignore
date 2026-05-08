@@ -6,6 +6,13 @@ Thumbs.db
 *.log
 
 reference/
+target/
+
+# Legacy Lua/QuickJS runtime is no longer used by the native-c bridge.
+init.lua
+lib/
+lua54.dll
+quickjs.dll
 
 page/.gitignore
 page/index.html
