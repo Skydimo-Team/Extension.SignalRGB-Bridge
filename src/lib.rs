@@ -1,5 +1,6 @@
 mod abi;
 mod bridge;
+mod device_worker;
 mod ffi;
 mod hid;
 mod host;

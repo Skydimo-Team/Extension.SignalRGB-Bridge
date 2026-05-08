@@ -1,21 +1,24 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
 use crate::abi::{SkydimoHostApiV1, SkydimoOutputFrameV1};
-use crate::hid::{HidBackend, HidHandle, HidInfo, SharedHid};
+use crate::device_worker::{DeviceWorker, DeviceWorkerEvent};
+use crate::hid::{HidBackend, HidInfo, SharedHid};
 use crate::host::Host;
 use crate::js_runtime::RuntimeJs;
 use crate::scripts::{collect_script_sources, scan_script};
 use crate::topology::{
-    classify_perf_state, close_handles, collect_endpoints, endpoint_key, format_hex16,
-    frames_to_output_map, make_controller_port, normalize_path, perf_rank, push_frames, round1,
-    shutdown_device, state_label, sync_topology,
+    classify_perf_state, format_hex16, frames_to_output_map, make_controller_port, normalize_path,
+    perf_rank, round1,
 };
-use crate::types::{DeviceState, PortStats, ScanResult, ScriptCatalog, ScriptMeta};
+use crate::types::{
+    DeviceRuntimeSnapshot, PortStats, RuntimeStatsSnapshot, ScanResult, ScriptCatalog, ScriptMeta,
+};
 use crate::{DISABLED_FILE, EXTERNAL_SCRIPTS_SUBDIR, STATS_INTERVAL};
 
 pub(crate) struct SignalRgbBridge {
@@ -25,16 +28,28 @@ pub(crate) struct SignalRgbBridge {
     scan_results: Vec<ScanResult>,
     script_db: Vec<ScriptMeta>,
     disabled_set: HashSet<String>,
-    devices: HashMap<String, DeviceState>,
+    devices: HashMap<String, DeviceRecord>,
     registered_ports: Vec<String>,
-    port_stats: HashMap<String, PortStats>,
+    worker_events_tx: Sender<DeviceWorkerEvent>,
+    worker_events_rx: Receiver<DeviceWorkerEvent>,
     last_stats_emit: Instant,
+}
+
+struct DeviceRecord {
+    meta: ScriptMeta,
+    hid_info: HidInfo,
+    controller_port: String,
+    worker: DeviceWorker,
+    snapshot: DeviceRuntimeSnapshot,
+    input_stats: PortStats,
+    route_stats: RuntimeStatsSnapshot,
 }
 
 impl SignalRgbBridge {
     pub(crate) unsafe fn new(host: *const SkydimoHostApiV1) -> Result<Self, String> {
         let host = unsafe { Host::from_raw(host) };
         let hid = HidBackend::new_shared()?;
+        let (worker_events_tx, worker_events_rx) = mpsc::channel();
         Ok(Self {
             host,
             hid,
@@ -44,7 +59,8 @@ impl SignalRgbBridge {
             disabled_set: HashSet::new(),
             devices: HashMap::new(),
             registered_ports: Vec::new(),
-            port_stats: HashMap::new(),
+            worker_events_tx,
+            worker_events_rx,
             last_stats_emit: Instant::now(),
         })
     }
@@ -65,7 +81,6 @@ impl SignalRgbBridge {
         self.remove_all_devices();
         self.script_db.clear();
         self.scan_results.clear();
-        self.port_stats.clear();
         self.emit_scripts_snapshot();
         self.emit_devices_snapshot();
         Ok(())
@@ -193,18 +208,9 @@ impl SignalRgbBridge {
                     if !self.validate_endpoint(&meta, hid) {
                         continue;
                     }
-                    let open_result = { self.hid.borrow_mut().open_path(&hid.path) };
-                    match open_result {
-                        Ok(handle) => {
-                            if self.register_device(meta.clone(), handle, hid.clone()).is_some() {
-                                open_groups.insert(group);
-                                matched += 1;
-                            }
-                        }
-                        Err(err) => {
-                            self.host
-                                .log_warn(&format!("[SRGB] Failed to open {}: {err}", hid.path));
-                        }
+                    if self.register_device(meta.clone(), hid.clone()).is_some() {
+                        open_groups.insert(group);
+                        matched += 1;
                     }
                 }
             }
@@ -239,110 +245,48 @@ impl SignalRgbBridge {
             .unwrap_or(false)
     }
 
-    fn register_device(&mut self, meta: ScriptMeta, primary_handle: HidHandle, primary_hid: HidInfo) -> Option<()> {
+    fn register_device(&mut self, meta: ScriptMeta, primary_hid: HidInfo) -> Option<()> {
         let controller_port = make_controller_port(&primary_hid);
-        let (ep_handles, endpoints) = self.open_all_endpoints(primary_handle, &primary_hid);
-        let mut runtime = match RuntimeJs::create_runtime(
+        if self.devices.contains_key(&controller_port) {
+            return None;
+        }
+        let worker = match DeviceWorker::spawn(
             self.host,
-            self.hid.clone(),
-            &meta,
-            primary_handle,
-            &primary_hid,
-            ep_handles.clone(),
-            endpoints,
+            meta.clone(),
+            primary_hid.clone(),
+            self.worker_events_tx.clone(),
         ) {
-            Ok(runtime) => runtime,
+            Ok(worker) => worker,
             Err(err) => {
                 self.host
-                    .log_warn(&format!("[SRGB] JS context failed for {}: {err}", meta.name));
-                close_handles(&self.hid, &ep_handles);
+                    .log_warn(&format!("[SRGB] Failed to start worker for {}: {err}", meta.name));
                 return None;
             }
         };
 
-        if runtime.has_global("Initialize") {
-            if let Err(err) = runtime.call_global_json("Initialize", &[]) {
-                self.host
-                    .log_warn(&format!("[SRGB] Initialize() failed for {}: {err}", meta.name));
-            }
-        }
-
-        let mut state = DeviceState {
-            meta,
-            hid_info: primary_hid,
-            ep_handles,
-            runtime,
-            controller_port: controller_port.clone(),
-            output_targets: HashMap::new(),
-            main_output_id: None,
-            main_matrix: None,
-            main_width: 1,
-            rt_name: None,
-            rt_width: 1,
-            rt_height: 1,
-            registered: None,
-            spatial_cache: Vec::new(),
-        };
-
-        if let Err(err) = sync_topology(self.host, &mut state, true) {
-            self.host.log_warn(&format!(
-                "[SRGB] Topology export failed for {}: {err}",
-                state.meta.name
-            ));
-            shutdown_device(self.host, &self.hid, &mut state);
-            return None;
-        }
-
-        let output_count = state
-            .registered
-            .as_ref()
-            .map(|registration| registration.outputs.len())
-            .unwrap_or(0);
         self.host.log_info(&format!(
-            "[SRGB] Registered: {} ({}) outputs={output_count}",
-            state.rt_name.as_deref().unwrap_or("?"),
-            state.controller_port
+            "[SRGB] Worker started: {} ({controller_port})",
+            meta.name
         ));
-
-        self.devices.insert(controller_port.clone(), state);
+        self.devices.insert(
+            controller_port.clone(),
+            DeviceRecord {
+                snapshot: DeviceRuntimeSnapshot {
+                    name: meta.name.clone(),
+                    output_count: 0,
+                    total_leds: 0,
+                },
+                meta,
+                hid_info: primary_hid,
+                controller_port: controller_port.clone(),
+                worker,
+                input_stats: PortStats::default(),
+                route_stats: RuntimeStatsSnapshot::default(),
+            },
+        );
         self.registered_ports.push(controller_port);
         self.emit_devices_snapshot();
         Some(())
-    }
-
-    fn open_all_endpoints(
-        &self,
-        primary_handle: HidHandle,
-        primary_hid: &HidInfo,
-    ) -> (HashMap<String, HidHandle>, Vec<Value>) {
-        let endpoints = collect_endpoints(&self.hid, primary_hid);
-        let primary_key = endpoint_key(primary_hid);
-        let mut handles = HashMap::from([(primary_key.clone(), primary_handle)]);
-        let mut descriptors = Vec::new();
-
-        for (key, ep) in endpoints {
-            descriptors.push(json!({
-                "interface": ep.interface_number.unwrap_or(0),
-                "usage": ep.usage.unwrap_or(0),
-                "usage_page": ep.usage_page.unwrap_or(0),
-                "collection": 0,
-            }));
-            if key != primary_key {
-                match self.hid.borrow_mut().open_path(&ep.path) {
-                    Ok(handle) => {
-                        handles.insert(key.clone(), handle);
-                        self.host
-                            .log_info(&format!("[SRGB] Opened endpoint {key} path={}", ep.path));
-                    }
-                    Err(err) => {
-                        self.host
-                            .log_warn(&format!("[SRGB] Failed to open endpoint {key}: {err}"));
-                    }
-                }
-            }
-        }
-
-        (handles, descriptors)
     }
 
     fn open_groups(&self) -> HashSet<String> {
@@ -388,15 +332,14 @@ impl SignalRgbBridge {
     }
 
     fn remove_device(&mut self, port: &str) {
-        let Some(mut state) = self.devices.remove(port) else {
+        let Some(mut record) = self.devices.remove(port) else {
             return;
         };
-        shutdown_device(self.host, &self.hid, &mut state);
+        record.worker.stop();
         let _ = self
             .host
-            .call("remove_extension_device", json!({ "port": state.controller_port }));
+            .call("remove_extension_device", json!({ "port": record.controller_port }));
         self.registered_ports.retain(|candidate| candidate != port);
-        self.port_stats.remove(port);
         self.emit_devices_snapshot();
     }
 
@@ -415,6 +358,7 @@ impl SignalRgbBridge {
         };
         match message_type {
             "bootstrap" | "refresh" => {
+                self.drain_worker_events();
                 self.emit_scripts_snapshot();
                 self.emit_devices_snapshot();
             }
@@ -447,70 +391,71 @@ impl SignalRgbBridge {
     }
 
     pub(crate) fn on_device_frame(&mut self, port: String, frames: &[SkydimoOutputFrameV1]) {
-        let Some(state) = self.devices.get_mut(&port) else {
+        let mut changed = self.drain_worker_events();
+        let Some(record) = self.devices.get_mut(&port) else {
+            if changed {
+                self.emit_devices_snapshot();
+            }
             return;
         };
         let outputs = unsafe { frames_to_output_map(frames) };
-        let start = Instant::now();
-        let mut render_ok = true;
-
-        if let Err(err) = push_frames(state, &outputs) {
-            self.host
-                .log_warn(&format!("[SRGB] Frame push failed for {}: {err}", state_label(state)));
-            return;
+        record.input_stats.record(Duration::ZERO, true);
+        record.worker.submit_frame(outputs);
+        changed |= self.refresh_input_stats();
+        if changed {
+            self.emit_devices_snapshot();
         }
-        if state.runtime.has_global("Render") {
-            if let Err(err) = state.runtime.call_global_json("Render", &[]) {
-                render_ok = false;
-                self.host
-                    .log_warn(&format!("[SRGB] Render() failed for {}: {err}", state_label(state)));
-            }
-        }
-        if let Err(err) = sync_topology(self.host, state, false) {
-            self.host.log_warn(&format!(
-                "[SRGB] Topology sync failed for {}: {err}",
-                state_label(state)
-            ));
-        }
-
-        self.update_stats(&port, start.elapsed(), render_ok);
     }
 
-    fn update_stats(&mut self, port: &str, elapsed: Duration, render_ok: bool) {
-        let stats = self.port_stats.entry(port.to_string()).or_default();
+    fn drain_worker_events(&mut self) -> bool {
+        let mut changed = false;
+        while let Ok(event) = self.worker_events_rx.try_recv() {
+            match event {
+                DeviceWorkerEvent::Topology { port, snapshot } => {
+                    if let Some(record) = self.devices.get_mut(&port) {
+                        let output_count = snapshot.output_count;
+                        let name = snapshot.name.clone();
+                        record.snapshot = snapshot;
+                        self.host.log_info(&format!(
+                            "[SRGB] Registered: {name} ({port}) outputs={output_count}"
+                        ));
+                        changed = true;
+                    }
+                }
+                DeviceWorkerEvent::Stats { port, stats } => {
+                    if let Some(record) = self.devices.get_mut(&port) {
+                        record.route_stats = stats;
+                        changed = true;
+                    }
+                }
+                DeviceWorkerEvent::Failed { port, error } => {
+                    self.host
+                        .log_warn(&format!("[SRGB] Removing failed worker {port}: {error}"));
+                    if let Some(mut record) = self.devices.remove(&port) {
+                        record.worker.stop();
+                        self.registered_ports.retain(|candidate| candidate != &port);
+                        changed = true;
+                    }
+                }
+            }
+        }
+        changed
+    }
+
+    fn refresh_input_stats(&mut self) -> bool {
         let now = Instant::now();
-        stats.t0.get_or_insert(now);
-        let render_ms = elapsed.as_secs_f64() * 1000.0;
-        stats.count += 1;
-        stats.render_sum_ms += render_ms;
-        stats.render_max_ms = stats.render_max_ms.max(render_ms);
-        if !render_ok {
-            stats.errors += 1;
+        if now.duration_since(self.last_stats_emit) < STATS_INTERVAL {
+            return false;
         }
 
-        if now.duration_since(self.last_stats_emit) >= STATS_INTERVAL {
-            for stats in self.port_stats.values_mut() {
-                let elapsed = stats
-                    .t0
-                    .map(|t0| now.duration_since(t0).as_secs_f64())
-                    .unwrap_or_default();
-                if elapsed > 0.0 && stats.count > 0 {
-                    stats.fps = stats.count as f64 / elapsed;
-                    stats.avg_ms = stats.render_sum_ms / stats.count as f64;
-                    stats.max_ms = stats.render_max_ms;
-                }
-                stats.errors_snapshot = stats.errors;
-                stats.count = 0;
-                stats.t0 = Some(now);
-                stats.render_sum_ms = 0.0;
-                stats.render_max_ms = 0.0;
-                stats.errors = 0;
+        let mut changed = false;
+        for record in self.devices.values_mut() {
+            if record.input_stats.snapshot_and_reset(now).is_some() {
+                changed = true;
             }
-            if !self.devices.is_empty() {
-                self.emit_devices_snapshot();
-            }
-            self.last_stats_emit = now;
         }
+        self.last_stats_emit = now;
+        changed
     }
 
     fn emit_scripts_snapshot(&self) {
@@ -564,32 +509,28 @@ impl SignalRgbBridge {
         let mut devices = self
             .devices
             .values()
-            .map(|state| {
-                let stats = self.port_stats.get(&state.controller_port);
-                let outputs = state
-                    .registered
-                    .as_ref()
-                    .map(|registration| registration.outputs.as_slice())
-                    .unwrap_or(&[]);
-                let total_leds = outputs.iter().map(|output| output.leds_count).sum::<usize>();
-                let fps = stats.map(|stats| stats.fps).unwrap_or_default();
-                let perf_state = classify_perf_state(fps);
+            .map(|record| {
+                let input_fps = record.input_stats.fps;
+                let route_fps = record.route_stats.fps;
+                let perf_state = classify_perf_state(route_fps);
                 json!({
-                    "port": state.controller_port,
-                    "name": state.rt_name.as_deref().unwrap_or(state.meta.name.as_str()),
-                    "script_name": state.meta.name,
-                    "script_path": state.meta.source_path,
-                    "device_path": state.hid_info.path,
-                    "publisher": state.meta.publisher,
-                    "vid": format_hex16(state.hid_info.vid),
-                    "pid": format_hex16(state.hid_info.pid),
-                    "device_type": state.meta.device_type,
-                    "output_count": outputs.len(),
-                    "total_leds": total_leds,
-                    "fps": round1(fps),
-                    "render_ms": round1(stats.map(|stats| stats.avg_ms).unwrap_or_default()),
-                    "max_render_ms": round1(stats.map(|stats| stats.max_ms).unwrap_or_default()),
-                    "errors": stats.map(|stats| stats.errors_snapshot).unwrap_or_default(),
+                    "port": record.controller_port,
+                    "name": record.snapshot.name,
+                    "script_name": record.meta.name,
+                    "script_path": record.meta.source_path,
+                    "device_path": record.hid_info.path,
+                    "publisher": record.meta.publisher,
+                    "vid": format_hex16(record.hid_info.vid),
+                    "pid": format_hex16(record.hid_info.pid),
+                    "device_type": record.meta.device_type,
+                    "output_count": record.snapshot.output_count,
+                    "total_leds": record.snapshot.total_leds,
+                    "fps": round1(route_fps),
+                    "input_fps": round1(input_fps),
+                    "route_fps": round1(route_fps),
+                    "render_ms": round1(record.route_stats.avg_ms),
+                    "max_render_ms": round1(record.route_stats.max_ms),
+                    "errors": record.route_stats.errors,
                     "perf_state": perf_state,
                 })
             })

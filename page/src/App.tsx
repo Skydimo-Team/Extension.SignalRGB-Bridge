@@ -41,6 +41,10 @@ function useForceUpdate() {
   return useCallback(() => setState((n) => n + 1), [])
 }
 
+function formatFps(value: number | undefined) {
+  return Number.isFinite(value) ? Number(value).toFixed(1) : '0.0'
+}
+
 function useBridge() {
   const [scripts, setScripts] = useState<ScriptInfo[]>([])
   const [devices, setDevices] = useState<BridgeDevice[]>([])
@@ -151,47 +155,10 @@ function ScriptStatusIcon({ script }: { script: ScriptInfo }) {
   return <Icon color="var(--color-success)" boxSize="18px"><CheckCircle2 size={18} /></Icon>
 }
 
-function DeviceStatusBadge({ device }: { device: BridgeDevice }) {
-  if (device.perf_state === 'running' && device.errors === 0) {
-    return (
-      <Badge bg="var(--badge-ok-bg)" color="var(--badge-ok-text)" borderRadius="full" px="2.5" py="0.5">
-        {t('perf_running')}
-      </Badge>
-    )
-  }
-
-  if (device.perf_state === 'slow') {
-    return (
-      <Badge bg="var(--badge-warning-bg)" color="var(--badge-warning-text)" borderRadius="full" px="2.5" py="0.5">
-        {t('perf_slow')}
-      </Badge>
-    )
-  }
-
-  if (device.perf_state === 'blocked' || device.errors > 0) {
-    return (
-      <Badge bg="var(--badge-error-bg)" color="var(--badge-error-text)" borderRadius="full" px="2.5" py="0.5">
-        {t('perf_blocked')}
-      </Badge>
-    )
-  }
-
-  return (
-    <Badge bg="var(--badge-idle-bg)" color="var(--badge-idle-text)" borderRadius="full" px="2.5" py="0.5">
-      {t('perf_idle')}
-    </Badge>
-  )
-}
-
 function DeviceCard({ device }: { device: BridgeDevice }) {
   const scriptFileName = device.script_path.split(/[/\\]/).pop() ?? device.script_path
-  const healthLabel = device.perf_state === 'running'
-    ? t('perf_running')
-    : device.perf_state === 'slow'
-      ? t('perf_slow')
-      : device.perf_state === 'blocked'
-        ? t('perf_blocked')
-        : t('perf_idle')
+  const inputFps = device.input_fps ?? 0
+  const routeFps = device.route_fps ?? device.fps ?? 0
 
   return (
     <Card.Root
@@ -224,7 +191,6 @@ function DeviceCard({ device }: { device: BridgeDevice }) {
                 <Text fontSize="15px" fontWeight="700" color="var(--text-primary)" truncate>
                   {device.name}
                 </Text>
-                <DeviceStatusBadge device={device} />
               </Flex>
               <Text mt="1" fontSize="12px" color="var(--text-muted)" truncate>
                 {t('source_script', { name: device.script_name || scriptFileName })}
@@ -266,17 +232,26 @@ function DeviceCard({ device }: { device: BridgeDevice }) {
           </Badge>
         </Flex>
 
-        <SimpleGrid columns={{ base: 1, md: 3 }} gap="2.5">
+        <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} gap="2.5">
           <Stat.Root bg="var(--bg-panel)" border="1px solid var(--border-subtle)" borderRadius="var(--radius-m)" p="3">
             <Stat.Label color="var(--text-muted)" fontSize="11px">
-              {t('device_stat_fps')}
+              {t('device_stat_input_fps')}
             </Stat.Label>
             <Stat.ValueText color="var(--text-primary)" fontSize="lg">
-              {device.fps}
+              {formatFps(inputFps)}
             </Stat.ValueText>
             <Stat.HelpText color="var(--text-muted)" fontSize="11px">
-              {healthLabel}
+              {t('device_stat_input_help')}
             </Stat.HelpText>
+          </Stat.Root>
+
+          <Stat.Root bg="var(--bg-panel)" border="1px solid var(--border-subtle)" borderRadius="var(--radius-m)" p="3">
+            <Stat.Label color="var(--text-muted)" fontSize="11px">
+              {t('device_stat_route_fps')}
+            </Stat.Label>
+            <Stat.ValueText color="var(--text-primary)" fontSize="lg">
+              {formatFps(routeFps)}
+            </Stat.ValueText>
           </Stat.Root>
 
           <Stat.Root bg="var(--bg-panel)" border="1px solid var(--border-subtle)" borderRadius="var(--radius-m)" p="3">
@@ -493,17 +468,17 @@ export default function App() {
 
   const deviceCounts = useMemo(() => {
     let active = 0
-    let attention = 0
+    let errors = 0
     for (const device of devices) {
-      if (device.fps > 0) active++
-      if (device.perf_state === 'slow' || device.perf_state === 'blocked' || device.errors > 0) {
-        attention++
+      if ((device.route_fps ?? device.fps ?? 0) > 0 || (device.input_fps ?? 0) > 0) active++
+      if (device.errors > 0) {
+        errors++
       }
     }
     return {
       total: devices.length,
       active,
-      attention,
+      errors,
     }
   }, [devices])
 
@@ -546,7 +521,7 @@ export default function App() {
     ? t('devices_stats', {
       total: deviceCounts.total,
       active: deviceCounts.active,
-      attention: deviceCounts.attention,
+      errors: deviceCounts.errors,
     })
     : t('scripts_stats', {
       total: scriptCounts.all,

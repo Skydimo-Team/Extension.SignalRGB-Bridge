@@ -1,10 +1,12 @@
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
 use crate::hid::{HidHandle, HidInfo};
 use crate::js_runtime::RuntimeJs;
+
+pub(crate) type FrameBatch = HashMap<String, Vec<u8>>;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ScriptMeta {
@@ -109,5 +111,72 @@ pub(crate) struct PortStats {
     pub(crate) fps: f64,
     pub(crate) avg_ms: f64,
     pub(crate) max_ms: f64,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct RuntimeStatsSnapshot {
+    pub(crate) fps: f64,
+    pub(crate) avg_ms: f64,
+    pub(crate) max_ms: f64,
+    pub(crate) errors: usize,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct DeviceRuntimeSnapshot {
+    pub(crate) name: String,
+    pub(crate) output_count: usize,
+    pub(crate) total_leds: usize,
+}
+
+impl PortStats {
+    pub(crate) fn record(&mut self, elapsed: Duration, ok: bool) {
+        let now = Instant::now();
+        self.t0.get_or_insert(now);
+        let elapsed_ms = elapsed.as_secs_f64() * 1000.0;
+        self.count += 1;
+        self.render_sum_ms += elapsed_ms;
+        self.render_max_ms = self.render_max_ms.max(elapsed_ms);
+        if !ok {
+            self.errors += 1;
+        }
+    }
+
+    pub(crate) fn snapshot_and_reset(&mut self, now: Instant) -> Option<RuntimeStatsSnapshot> {
+        let elapsed = self
+            .t0
+            .map(|t0| now.duration_since(t0).as_secs_f64())
+            .unwrap_or_default();
+        if elapsed <= 0.0 {
+            return None;
+        }
+
+        self.fps = if self.count > 0 {
+            self.count as f64 / elapsed
+        } else {
+            0.0
+        };
+        self.avg_ms = if self.count > 0 {
+            self.render_sum_ms / self.count as f64
+        } else {
+            0.0
+        };
+        self.max_ms = self.render_max_ms;
+        self.errors_snapshot = self.errors;
+
+        let snapshot = RuntimeStatsSnapshot {
+            fps: self.fps,
+            avg_ms: self.avg_ms,
+            max_ms: self.max_ms,
+            errors: self.errors_snapshot,
+        };
+
+        self.count = 0;
+        self.t0 = Some(now);
+        self.render_sum_ms = 0.0;
+        self.render_max_ms = 0.0;
+        self.errors = 0;
+
+        Some(snapshot)
+    }
 }
 

@@ -8,7 +8,7 @@ use crate::host::Host;
 use crate::types::{DeviceState, Matrix, OutputSpec, OutputTarget, Registration};
 use crate::CONTROLLER_ID;
 
-pub(crate) fn sync_topology(host: Host, state: &mut DeviceState, force: bool) -> Result<(), String> {
+pub(crate) fn sync_topology(host: Host, state: &mut DeviceState, force: bool) -> Result<bool, String> {
     if !force {
         let dirty = state
             .runtime
@@ -17,7 +17,7 @@ pub(crate) fn sync_topology(host: Host, state: &mut DeviceState, force: bool) ->
             .and_then(|value| value.as_bool())
             .unwrap_or(true);
         if !dirty {
-            return Ok(());
+            return Ok(false);
         }
     }
 
@@ -25,7 +25,7 @@ pub(crate) fn sync_topology(host: Host, state: &mut DeviceState, force: bool) ->
         .runtime
         .call_global_json("__srgb_take_topology_update", &[Value::Bool(force)])?;
     if raw == Value::Bool(false) && !force {
-        return Ok(());
+        return Ok(false);
     }
     let registration = build_registration(state, &raw)?;
 
@@ -55,7 +55,7 @@ pub(crate) fn sync_topology(host: Host, state: &mut DeviceState, force: bool) ->
     }
 
     apply_registration_state(state, registration);
-    Ok(())
+    Ok(true)
 }
 
 pub(crate) fn build_registration(state: &DeviceState, raw: &Value) -> Result<Registration, String> {

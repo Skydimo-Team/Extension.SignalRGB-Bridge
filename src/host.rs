@@ -9,6 +9,10 @@ pub struct Host {
     api: SkydimoHostApiV1,
 }
 
+// The native extension host callbacks are backed by thread-safe Core handles.
+unsafe impl Send for Host {}
+unsafe impl Sync for Host {}
+
 impl Host {
     pub unsafe fn from_raw(raw: *const SkydimoHostApiV1) -> Self {
         let api = if raw.is_null() {

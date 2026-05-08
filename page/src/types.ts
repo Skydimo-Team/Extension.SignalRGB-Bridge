@@ -27,10 +27,11 @@ export interface BridgeDevice {
   output_count: number
   total_leds: number
   fps: number
+  input_fps: number
+  route_fps: number
   render_ms: number
   max_render_ms: number
   errors: number
-  perf_state: 'running' | 'slow' | 'blocked' | 'idle'
 }
 
 export interface DevicesSnapshotPayload {
