@@ -33,6 +33,7 @@ pub(crate) struct SignalRgbBridge {
     worker_events_tx: Sender<DeviceWorkerEvent>,
     worker_events_rx: Receiver<DeviceWorkerEvent>,
     last_stats_emit: Instant,
+    started: bool,
 }
 
 struct DeviceRecord {
@@ -62,13 +63,18 @@ impl SignalRgbBridge {
             worker_events_tx,
             worker_events_rx,
             last_stats_emit: Instant::now(),
+            started: false,
         })
     }
 
     pub(crate) fn start(&mut self) -> Result<(), String> {
+        if self.started {
+            self.stop()?;
+        }
         self.host
             .log_info("[SRGB] SignalRGB native Boa bridge starting");
         self.data_dir = PathBuf::from(self.host.data_dir()?);
+        self.started = true;
         let _ = fs::create_dir_all(self.scripts_dir());
         self.disabled_set = self.load_disabled_set();
         self.rescan_and_discover("Scanning device scripts...", true);
@@ -76,6 +82,10 @@ impl SignalRgbBridge {
     }
 
     pub(crate) fn stop(&mut self) -> Result<(), String> {
+        if !self.started {
+            return Ok(());
+        }
+        self.started = false;
         self.host
             .log_info("[SRGB] SignalRGB native Boa bridge stopping");
         self.remove_all_devices();
@@ -546,6 +556,12 @@ impl SignalRgbBridge {
             })
         });
         devices
+    }
+}
+
+impl Drop for SignalRgbBridge {
+    fn drop(&mut self) {
+        let _ = self.stop();
     }
 }
 
