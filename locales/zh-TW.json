@@ -2,5 +2,11 @@
   "meta": {
     "name": "SignalRGB 腳本驅動器 (beta)",
     "description": "基於 QuickJS 實作的 SignalRGB 到 Skydimo 驅動相容層，用於執行 SignalRGB 裝置腳本。目前仍在測試中，部分裝置可能會出現卡頓問題。"
+  },
+  "notifications": {
+    "scanningScripts": "正在掃描裝置腳本...",
+    "rescanning": "正在重新掃描...",
+    "scanProgress": "正在掃描裝置腳本... {scanned}/{total}",
+    "scanSummary": "已載入 {scripts} 個腳本，匹配到 {matched} 個裝置"
   }
 }

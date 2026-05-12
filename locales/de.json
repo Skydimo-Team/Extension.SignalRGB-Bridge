@@ -1,6 +1,12 @@
 {
-  "meta": {
-    "name": "SignalRGB-Skripttreiber (Beta)",
-    "description": "Ein QuickJS-basierter Kompatibilitätstreiber zum Ausführen von SignalRGB-Geräteskripten in Skydimo. Befindet sich noch im Test, und bei einigen Geräten kann es zu Rucklern kommen."
-  }
+    "meta": {
+        "name": "SignalRGB-Skripttreiber (Beta)",
+        "description": "Ein QuickJS-basierter Kompatibilitätstreiber zum Ausführen von SignalRGB-Geräteskripten in Skydimo. Befindet sich noch im Test, und bei einigen Geräten kann es zu Rucklern kommen."
+    },
+    "notifications": {
+        "scanningScripts": "Geräteskripte werden gescannt...",
+        "rescanning": "Erneuter Scan läuft...",
+        "scanProgress": "Geräteskripte werden gescannt... {scanned}/{total}",
+        "scanSummary": "{scripts} Skript(e) geladen, {matched} Gerät(e) zugeordnet"
+    }
 }

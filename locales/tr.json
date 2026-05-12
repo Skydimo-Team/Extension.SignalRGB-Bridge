@@ -2,5 +2,11 @@
   "meta": {
     "name": "SignalRGB Script Driver (beta)",
     "description": "SignalRGB cihaz betiklerini Skydimo'da çalıştırmak için QuickJS tabanlı bir SignalRGB uyumluluk sürücüsü. Hâlâ test aşamasında ve bazı cihazlarda takılma yaşanabilir."
+  },
+  "notifications": {
+    "scanningScripts": "Cihaz betikleri taranıyor...",
+    "rescanning": "Yeniden taranıyor...",
+    "scanProgress": "Cihaz betikleri taranıyor... {scanned}/{total}",
+    "scanSummary": "{scripts} betik yüklendi, {matched} cihaz eşleşti"
   }
 }

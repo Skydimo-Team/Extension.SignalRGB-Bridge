@@ -1,6 +1,12 @@
 {
-  "meta": {
-    "name": "Pilote de scripts SignalRGB (bêta)",
-    "description": "Pilote de compatibilité basé sur QuickJS pour exécuter des scripts de périphériques SignalRGB dans Skydimo. Encore en phase de test, certains appareils peuvent présenter des saccades."
-  }
+    "meta": {
+        "name": "Pilote de scripts SignalRGB (bêta)",
+        "description": "Pilote de compatibilité basé sur QuickJS pour exécuter des scripts de périphériques SignalRGB dans Skydimo. Encore en phase de test, certains appareils peuvent présenter des saccades."
+    },
+    "notifications": {
+        "scanningScripts": "Analyse des scripts d'appareils...",
+        "rescanning": "Nouvelle analyse...",
+        "scanProgress": "Analyse des scripts d'appareils... {scanned}/{total}",
+        "scanSummary": "{scripts} script(s) chargé(s), {matched} appareil(s) correspondant(s)"
+    }
 }

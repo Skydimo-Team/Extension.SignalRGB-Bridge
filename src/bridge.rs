@@ -21,6 +21,10 @@ use crate::types::{
 };
 use crate::{DISABLED_FILE, EXTERNAL_SCRIPTS_SUBDIR, STATS_INTERVAL};
 
+const SCAN_NOTIFICATION_ID: &str = "srgb-scan";
+const SCAN_PROGRESS_STEP: usize = 25;
+const SCAN_PROGRESS_MIN_INTERVAL: Duration = Duration::from_millis(150);
+
 pub(crate) struct SignalRgbBridge {
     host: Host,
     hid: SharedHid,
@@ -77,7 +81,7 @@ impl SignalRgbBridge {
         self.started = true;
         let _ = fs::create_dir_all(self.scripts_dir());
         self.disabled_set = self.load_disabled_set();
-        self.rescan_and_discover("Scanning device scripts...", true);
+        self.rescan_and_discover(json!({ "key": "notifications.scanningScripts" }), true);
         Ok(())
     }
 
@@ -132,11 +136,11 @@ impl SignalRgbBridge {
             .collect()
     }
 
-    pub(crate) fn rescan_and_discover(&mut self, message: &str, startup: bool) {
+    pub(crate) fn rescan_and_discover(&mut self, message: Value, startup: bool) {
         self.host
-            .notify_persistent("srgb-scan", "SignalRGB Script Driver (native)", message);
+            .notify_persistent_value(SCAN_NOTIFICATION_ID, json!("meta.name"), message);
         let results = self.scan_scripts();
-        self.host.dismiss_persistent("srgb-scan");
+        self.host.dismiss_persistent(SCAN_NOTIFICATION_ID);
 
         self.scan_results = results;
         self.script_db = self.active_script_db();
@@ -162,9 +166,15 @@ impl SignalRgbBridge {
         self.host.log_info(&format!(
             "[SRGB] Scanned {total} script(s), {errors} error(s), {skipped} disabled"
         ));
-        self.host.notify(
-            "SignalRGB Script Driver (native)",
-            &format!("{} scripts loaded, {} device(s) matched", self.script_db.len(), matched),
+        self.host.notify_value(
+            json!("meta.name"),
+            json!({
+                "key": "notifications.scanSummary",
+                "args": {
+                    "scripts": self.script_db.len(),
+                    "matched": matched,
+                }
+            }),
             if matched > 0 { "success" } else { "info" },
         );
         self.emit_scripts_snapshot();
@@ -174,12 +184,41 @@ impl SignalRgbBridge {
     fn scan_scripts(&self) -> Vec<ScanResult> {
         let (sources, read_errors) = collect_script_sources(&self.scripts_dir());
         let catalog = ScriptCatalog::from_sources(&sources);
-        let mut results = sources
-            .iter()
-            .map(|source| scan_script(source, &catalog))
-            .collect::<Vec<_>>();
+        let total = sources.len();
+        if total > 0 {
+            self.notify_scan_progress(0, total);
+        }
+
+        let mut results = Vec::with_capacity(sources.len() + read_errors.len());
+        let mut last_progress_emit = Instant::now();
+        for (index, source) in sources.iter().enumerate() {
+            results.push(scan_script(source, &catalog));
+            let scanned = index + 1;
+            let should_emit = scanned == total
+                || scanned % SCAN_PROGRESS_STEP == 0
+                || last_progress_emit.elapsed() >= SCAN_PROGRESS_MIN_INTERVAL;
+            if should_emit {
+                self.notify_scan_progress(scanned, total);
+                last_progress_emit = Instant::now();
+            }
+        }
+
         results.extend(read_errors);
         results
+    }
+
+    fn notify_scan_progress(&self, scanned: usize, total: usize) {
+        self.host.notify_persistent_value(
+            SCAN_NOTIFICATION_ID,
+            json!("meta.name"),
+            json!({
+                "key": "notifications.scanProgress",
+                "args": {
+                    "scanned": scanned,
+                    "total": total,
+                }
+            }),
+        );
     }
 
     fn discover_and_register(&mut self) -> usize {
@@ -395,7 +434,7 @@ impl SignalRgbBridge {
                 self.emit_scripts_snapshot();
                 self.emit_devices_snapshot();
             }
-            "rescan" => self.rescan_and_discover("Rescanning...", false),
+            "rescan" => self.rescan_and_discover(json!({ "key": "notifications.rescanning" }), false),
             _ => {}
         }
     }

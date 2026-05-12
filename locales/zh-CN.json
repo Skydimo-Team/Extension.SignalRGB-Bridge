@@ -2,5 +2,11 @@
     "meta": {
         "name": "SignalRGB 脚本驱动器 (beta)",
         "description": "基于 QuickJS 实现的 SignalRGB 到 Skydimo 驱动兼容层，用于运行 SignalRGB 设备脚本。目前仍在测试中，部分设备可能会出现卡顿问题。"
+    },
+    "notifications": {
+        "scanningScripts": "正在扫描设备脚本...",
+        "rescanning": "正在重新扫描...",
+        "scanProgress": "正在扫描设备脚本... {scanned}/{total}",
+        "scanSummary": "已加载 {scripts} 个脚本，匹配到 {matched} 个设备"
     }
 }

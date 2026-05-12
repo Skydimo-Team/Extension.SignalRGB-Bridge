@@ -91,14 +91,14 @@ impl Host {
         }
     }
 
-    pub fn notify(&self, title: &str, description: &str, level: &str) {
+    pub fn notify_value(&self, title: Value, description: Value, level: &str) {
         let _ = self.call(
             "notify",
             json!({ "title": title, "description": description, "level": level }),
         );
     }
 
-    pub fn notify_persistent(&self, id: &str, title: &str, description: &str) {
+    pub fn notify_persistent_value(&self, id: &str, title: Value, description: Value) {
         let _ = self.call(
             "notify_persistent",
             json!({ "id": id, "title": title, "description": description }),

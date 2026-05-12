@@ -2,5 +2,11 @@
   "meta": {
     "name": "Controlador de scripts SignalRGB (beta)",
     "description": "Controlador de compatibilidad basado en QuickJS para ejecutar scripts de dispositivos SignalRGB en Skydimo. Aún está en pruebas y algunos dispositivos pueden sufrir tirones."
+  },
+  "notifications": {
+    "scanningScripts": "Escaneando scripts de dispositivos...",
+    "rescanning": "Reescaneando...",
+    "scanProgress": "Escaneando scripts de dispositivos... {scanned}/{total}",
+    "scanSummary": "{scripts} script(s) cargado(s), {matched} dispositivo(s) coincidente(s)"
   }
 }

@@ -1,6 +1,6 @@
 use std::ffi::{c_char, c_void};
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::abi::{
     ffi_str, SkydimoControllerApiV1, SkydimoEffectApiV1, SkydimoExtensionApiV1,
@@ -52,7 +52,7 @@ unsafe extern "C" fn signalrgb_on_scan_devices(instance: *mut c_void) -> i32 {
     let Some(extension) = extension_mut(instance) else {
         return -1;
     };
-    extension.rescan_and_discover("Rescanning...", false);
+    extension.rescan_and_discover(json!({ "key": "notifications.rescanning" }), false);
     0
 }
 
