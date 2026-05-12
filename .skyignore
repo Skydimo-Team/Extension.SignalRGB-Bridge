@@ -1,29 +1,24 @@
-# Runtime only needs the built extension page and bridge runtime assets.
+# Native extension: exclude Rust/native build inputs and npm page sources.
 .git
+.gitignore
+.skyignore
 .DS_Store
 Thumbs.db
 *.tmp
 *.log
 
-reference/
+Cargo.toml
+Cargo.lock
+build.rs
+build-native.ps1
+src/
 target/
+native/src/
+native/target/
+native/dist/
 
-# Legacy Lua/QuickJS runtime is no longer used by the native-c bridge.
-init.lua
-lib/
-lua54.dll
-quickjs.dll
-
-page/.gitignore
-page/index.html
-page/node_modules/
-page/src/
-page/public/
-page/package.json
-page/package-lock.json
-page/README.md
-page/eslint.config.js
-page/vite.config.ts
-page/tsconfig.json
-page/tsconfig.app.json
-page/tsconfig.node.json
+# Keep the built extension page only.
+page/*
+page/.*
+!page/dist/
+!page/dist/**
